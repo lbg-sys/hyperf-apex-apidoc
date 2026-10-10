@@ -47,7 +47,11 @@ final class ApiDocController extends AbstractController
         if (! is_readable($path)) {
             return $this->response->json([
                 'code' => 404,
-                'message' => sprintf('%s 文档尚未生成，请先运行 api-doc:generate%s。', $label, $label === 'Apifox' ? '-apifox' : ''),
+                // Apifox 的产物由独立组件生成：只装 apidoc 时命令根本不存在，
+                // 提示语必须把这一步一起说出来，否则会让人拿着一个不存在的命令去跑。
+                'message' => $label === 'Apifox'
+                    ? 'Apifox 文档尚未生成：需要 composer require hyperf-apex/apidoc-apifox 并运行 api-doc:generate-apifox。'
+                    : 'OpenAPI 文档尚未生成，请先运行 api-doc:generate。',
                 'data' => [],
             ])->withStatus(404);
         }

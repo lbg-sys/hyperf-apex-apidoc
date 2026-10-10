@@ -1,14 +1,13 @@
 {
     "name": "hyperf-apex/apidoc",
-    "description": "Apex OpenAPI 3.1 & Apifox documentation generator for Hyperf",
+    "description": "Apex OpenAPI 3.1 documentation generator for Hyperf",
     "type": "library",
     "license": "Apache-2.0",
     "keywords": [
         "hyperf",
         "swoole",
         "apex",
-        "openapi",
-        "apifox"
+        "openapi"
     ],
     "homepage": "https://github.com/lbg-sys/hyperf-apex-apidoc",
     "support": {
@@ -24,8 +23,6 @@
     "require": {
         "php": ">=8.4",
         "hyperf-apex/core": "^1.0",
-        "hyperf-apex/reliability": "^1.0",
-        "hyperf-apex/websocket": "^1.0",
         "symfony/yaml": "^7.4",
         "zircote/swagger-php": "^6.12"
     },

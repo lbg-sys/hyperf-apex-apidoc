@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hyperf\Apex\ApiDoc;
 
 use Hyperf\Apex\ApiDoc\Command\GenerateApiDocCommand;
-use Hyperf\Apex\ApiDoc\Command\GenerateApifoxDocCommand;
 
 class ConfigProvider
 {
@@ -16,9 +15,10 @@ class ConfigProvider
     {
         return [
             'dependencies' => [],
+            // Apifox（WebSocket 契约）导出命令由 hyperf-apex/apidoc-apifox 注册：
+            // 它要读长连接契约，因此那一个包才依赖 hyperf-apex/websocket。
             'commands' => [
                 GenerateApiDocCommand::class,
-                GenerateApifoxDocCommand::class,
             ],
             'listeners' => [],
             'annotations' => [
