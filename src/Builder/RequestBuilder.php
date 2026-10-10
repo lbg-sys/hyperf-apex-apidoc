@@ -12,7 +12,6 @@ use Hyperf\Apex\DTO\Schema\SchemaFragment;
 use Hyperf\Apex\Http\ArgumentResolver\Attribute\FromBody;
 use Hyperf\Apex\Http\ArgumentResolver\Attribute\FromMultipart;
 use Hyperf\Apex\Http\ArgumentResolver\Attribute\FromQuery;
-use Hyperf\Apex\Http\Middleware\IdempotencyMiddleware;
 use Hyperf\Apex\Idempotency\Attribute\Idempotent;
 use OpenApi\Spec as OA;
 use ReflectionAttribute;
@@ -58,8 +57,8 @@ final class RequestBuilder
 
         $idempotent = $method->getAttributes(Idempotent::class)[0] ?? null;
         if ($idempotent !== null && $idempotent->newInstance()->requestIdField === null) {
-            $headers[IdempotencyMiddleware::HEADER] = new OA\Parameter(
-                name: IdempotencyMiddleware::HEADER,
+            $headers[Idempotent::HEADER] = new OA\Parameter(
+                name: Idempotent::HEADER,
                 in: 'header',
                 description: '幂等请求 ID；同一调用方对同一接口重试时必须保持不变。',
                 required: true,
