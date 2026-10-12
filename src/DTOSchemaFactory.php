@@ -7,10 +7,9 @@ namespace Hyperf\Apex\ApiDoc;
 use Hyperf\Apex\DTO\Contract\ArrayOfAttribute;
 use Hyperf\Apex\DTO\Contract\ItemSchemaAttribute;
 use Hyperf\Apex\DTO\Contract\NonNullableAttribute;
-use Hyperf\Apex\DTO\Contract\OptionalAttribute;
-use Hyperf\Apex\DTO\Contract\RequiredAttribute;
 use Hyperf\Apex\DTO\Contract\SchemaAttribute;
 use Hyperf\Apex\DTO\Contract\TypedSchemaAttribute;
+use Hyperf\Apex\DTO\Metadata\DTOMetadataFactory;
 use Hyperf\Apex\DTO\Metadata\TypeExpression;
 use Hyperf\Apex\DTO\Schema\ComponentName;
 use Hyperf\Apex\DTO\Schema\SchemaFragment;
@@ -175,8 +174,7 @@ final class DTOSchemaFactory
      * `#[ArrayOf]`、`#[MapOf]`、方法级返回类型和 SchemaReference 都走这里，
      * 保证「同一个类型在任何位置都得到同一种表达」。接受 list<X>、array<string, X>、
      * X[] 等嵌套写法；无法表达的写法直接抛异常，而不是静默落成 type: string。
-     */
-    /**
+     *
      * @param bool $nested 该类型是否出现在泛型表达式内层（内层必须写完整类名，见 fragmentForLeaf）
      */
     public function fragmentForTypeName(string $type, bool $nested = false): SchemaFragment
@@ -200,6 +198,8 @@ final class DTOSchemaFactory
     public function objectFragment(string $class, array $propertyOverrides = []): SchemaFragment
     {
         $reflection = new ReflectionClass($class);
+        // 必填判据与校验侧共用 DTOMetadataFactory（见下面的 required 分支）。
+        $metadata = DTOMetadataFactory::from($class);
         $parameters = [];
         foreach ($reflection->getConstructor()?->getParameters() ?? [] as $parameter) {
             $parameters[$parameter->getName()] = $parameter;
@@ -216,9 +216,12 @@ final class DTOSchemaFactory
             $properties[$name] = isset($propertyOverrides[$name])
                 ? self::withDescriptionFrom($fragment, $propertyOverrides[$name])
                 : $fragment;
-            if ($property->getAttributes(RequiredAttribute::class, ReflectionAttribute::IS_INSTANCEOF)
-                || ($parameter && ! $parameter->isDefaultValueAvailable()
-                    && ! $property->getAttributes(OptionalAttribute::class, ReflectionAttribute::IS_INSTANCEOF))) {
+            /*
+             * 必填判据只有一处实现（DTOMetadataFactory）：文档侧再算一遍时，「#[Required] /
+             * 构造器默认值 / #[Optional]」三者的优先级只要有一侧改动，同一个 DTO 就会在文档与
+             * 校验两处得到不同的 required 列表 —— 而这两处恰好是客户端与服务端各自的依据。
+             */
+            if (($metadata->properties[$name] ?? null)?->required === true) {
                 $required[] = $name;
             }
         }
