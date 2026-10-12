@@ -13,8 +13,7 @@ use Hyperf\Apex\Enum\ErrorCode;
  * 通用错误（400 业务失败、422 参数校验失败、401/403 认证与权限、500 系统错误）
  * 由生成器根据异常处理器与访问声明自动补全，不需要标注 —— 补全的判据是**接口的访问声明**，
  * 不是「谁会抛这个错」（见 `ApiDoc\Builder\ResponseBuilder::errors()`）：
- * 401 只在接口需要认证时补；403 只在接口声明了权限码（`#[RequirePermission]` /
- * `#[RequireSystemPermission]`）时补。
+ * 401 只在接口需要认证时补；403 只在接口声明了权限码（`#[RequirePermission]`）时补。
  *
  * 这个 Attribute 只用于补充「只有本接口才会出现」的错误，例如资源不存在、状态冲突。
  *
