@@ -10,7 +10,7 @@ use Hyperf\Command\Annotation\Command;
 use Hyperf\Command\Command as HyperfCommand;
 use Hyperf\Contract\ConfigInterface;
 
-#[Command(name: 'api-doc:generate', description: 'Generate OpenAPI JSON from controllers and DTOs.')]
+#[Command(name: 'api-doc:generate', description: '按控制器与 DTO 的声明生成 OpenAPI JSON 文档。')]
 final class GenerateApiDocCommand extends HyperfCommand
 {
     public function __construct(
