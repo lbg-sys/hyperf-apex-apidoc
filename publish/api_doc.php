@@ -57,6 +57,6 @@ return [
      */
     'excluded' => [
         // 演示接口与测试夹具：只服务于 test/ 下的用例与本地联调，不是任何客户端的入口。
-        // 'App\Controller\Test\*',
+        // 'App\Controller\Internal\*',
     ],
 ];

@@ -98,9 +98,8 @@ final class OperationBuilder
      * 由 URL path 与 HTTP 方法确定性派生 operationId。
      *
      * OpenAPI 要求同一文档中 (path, method) 组合唯一，因此只要 URL 不冲突，派生出的
-     * operationId 就不会重复；不同命名空间的同名控制器（如 Admin 与 Integration 下的
-     * 同名控制器）也不再互相干扰。产物形如 post_api_visibility_admin_account_devices_bind，
-     * 与真实 URL 一一对应、可直接反查。
+     * operationId 就不会重复；不同命名空间下的同名控制器也不再互相干扰。产物形如
+     * post_api_user_profile_update，与真实 URL 一一对应、可直接反查。
      */
     private static function operationIdFromUrl(string $path, string $httpMethod): string
     {
@@ -149,8 +148,8 @@ final class OperationBuilder
             path: $path,
             method: $httpMethod,
             // 唯一性只依赖 (path, method)：OpenAPI 允许同路径多动词、却要求每个 operationId
-            // 全文档唯一。按「短类名_方法名」拼会让不同命名空间的同名控制器（Admin /
-            // Integration / …）互相撞掉，且类名一改文档 id 就变；改成从 URL path 派生后，
+            // 全文档唯一。按「短类名_方法名」拼会让不同命名空间的同名控制器互相撞掉，
+            // 且类名一改文档 id 就变；改成从 URL path 派生后，
             // 只要 URL 不冲突 operationId 就不重复，客户端标识也跟随 URL 契约走。
             operationId: self::operationIdFromUrl($path, $httpMethod),
             summary: $summary,

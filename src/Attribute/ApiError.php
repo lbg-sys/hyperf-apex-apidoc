@@ -18,8 +18,8 @@ use Hyperf\Apex\Enum\ErrorCode;
  * 这个 Attribute 只用于补充「只有本接口才会出现」的错误，例如资源不存在、状态冲突。
  *
  * **例外**：接口本身没有权限码（公开 / 仅登录 / 集成 Token）而 Service 层又直抛
- * `PERMISSION_DENIED` 时，403 推不出来，必须在这里显式声明。公开的七牛回调就是这种 ——
- * 它用回调签名校验代替权限码，签名不通过时 Service 抛 403。
+ * `PERMISSION_DENIED` 时，403 推不出来，必须在这里显式声明。用回调签名代替权限码校验的
+ * 公开回调就是这种 —— 签名不通过时 Service 抛 403。
  *
  * 例：#[ApiError(ErrorCode::RESOURCE_NOT_FOUND, ErrorCode::RESOURCE_CONFLICT)]
  */
