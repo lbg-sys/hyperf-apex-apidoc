@@ -12,6 +12,7 @@ use Hyperf\Apex\DTO\Schema\SchemaFragment;
 use Hyperf\Apex\Http\ArgumentResolver\Attribute\FromBody;
 use Hyperf\Apex\Http\ArgumentResolver\Attribute\FromMultipart;
 use Hyperf\Apex\Http\ArgumentResolver\Attribute\FromQuery;
+use Hyperf\Apex\Http\Middleware\IntegrationTokenMiddleware;
 use Hyperf\Apex\Idempotency\Attribute\Idempotent;
 use OpenApi\Spec as OA;
 use ReflectionAttribute;
@@ -46,6 +47,7 @@ final class RequestBuilder
         $headers = [];
         foreach (array_merge($controller->getAttributes(ApiHeader::class), $method->getAttributes(ApiHeader::class)) as $attribute) {
             $header = $attribute->newInstance();
+            self::assertNotAuthenticationHeader($header->name);
             $headers[$header->name] = new OA\Parameter(
                 name: $header->name,
                 in: 'header',
@@ -107,7 +109,7 @@ final class RequestBuilder
             $name = $this->parameterName($parameter, ($body ?? $query)->newInstance());
             // 默认值与可空标记都跟 DTO 字段同一条判据：有缺省值就写出来，
             // `?string` 这类允许 null 的参数也要标出来 —— 文档不能比服务端更严。
-            $fragment = DTOSchemaFactory::withInferredDefault($this->scalarFragment($type), $parameter);
+            $fragment = DTOSchemaFactory::withInferredDefault($this->scalarFragment($type, $method), $parameter);
             if ($type !== null && $type->allowsNull()) {
                 $fragment = $fragment->with('nullable', true);
             }
@@ -147,6 +149,28 @@ final class RequestBuilder
         }
 
         return ['parameters' => $parameters, 'requestBody' => $this->body($bodyDto, $bodyProperties, $bodyRequired)];
+    }
+
+    /**
+     * 认证请求头不许再用 #[ApiHeader] 声明。
+     *
+     * 它们已经由访问声明推导成 securityScheme（见 SecurityResolver），再声明一遍会让同一份请求头
+     * 同时出现在 securityScheme 与 parameters 里，文档自相矛盾：调用方不知道该按哪一份填。
+     */
+    private static function assertNotAuthenticationHeader(string $name): void
+    {
+        $reserved = [
+            SecurityResolver::BEARER_HEADER,
+            SecurityResolver::API_KEY_HEADER,
+            IntegrationTokenMiddleware::HEADER,
+        ];
+
+        if (in_array(strtolower($name), array_map(strtolower(...), $reserved), true)) {
+            throw new RuntimeException(sprintf(
+                '请求头 %s 是认证头：它由访问声明推导成 securityScheme，不要再用 #[ApiHeader] 声明。',
+                $name,
+            ));
+        }
     }
 
     /**
@@ -339,11 +363,24 @@ final class RequestBuilder
         ]));
     }
 
-    private function scalarFragment(?ReflectionType $type): SchemaFragment
+    private function scalarFragment(?ReflectionType $type, ReflectionMethod $method): SchemaFragment
     {
         if (! $type instanceof ReflectionNamedType) {
             // 联合与交集类型没有单一的标量表达，落到 type: string 就是撒谎。
-            throw new RuntimeException('散装请求参数必须是单一的标量类型。');
+            throw new RuntimeException(sprintf('%s 的散装请求参数必须是单一的标量类型。', self::describe($method)));
+        }
+
+        if (in_array($type->getName(), ['array', 'iterable'], true)) {
+            /*
+             * 散装数组参数没有地方声明元素类型（#[ArrayOf] 只能标在 DTO 属性或方法上），
+             * 于是只能产出没有 items 的 `type: array` —— 上游把这种形态判为 warning，
+             * 整个生成命令都会失败，而报出来的是一条与业务代码无关的编译器提示。
+             * 想表达数组参数就用一个查询 DTO 承载它。
+             */
+            throw new RuntimeException(sprintf(
+                '%s 的数组参数必须有元素类型：请改用查询 DTO 承载，并在其属性上标 #[ArrayOf(ElementDTO::class)]。',
+                self::describe($method),
+            ));
         }
 
         return DTOSchemaFactory::primitiveFragment($type->getName());

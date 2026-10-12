@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hyperf\Apex\ApiDoc\Command;
 
 use Hyperf\Apex\ApiDoc\OpenApiGeneratorFactory;
+use Hyperf\Apex\ApiDoc\Support\ApiDocPaths;
 use Hyperf\Command\Annotation\Command;
 use Hyperf\Command\Command as HyperfCommand;
 use Hyperf\Contract\ConfigInterface;
@@ -45,7 +46,7 @@ final class GenerateApiDocCommand extends HyperfCommand
             return self::FAILURE;
         }
 
-        $path = $directory . '/openapi.json';
+        $path = ApiDocPaths::outputFile($this->config, ApiDocPaths::OPENAPI_FILE);
         $json = json_encode(
             $generator->compile($specification),
             JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
@@ -70,13 +71,12 @@ final class GenerateApiDocCommand extends HyperfCommand
 
     /**
      * 产物目录。默认 `BASE_PATH/runtime/api-doc`，需要用别的目录承接时改 `api_doc.output_path`。
+     *
+     * 与对外出口（ApiDocController）共用 ApiDocPaths，两处不可能解析出不同结果。
      */
     private function outputPath(): string
     {
-        return self::path(
-            $this->config->get('api_doc.output_path'),
-            static fn (): string => BASE_PATH . '/runtime/api-doc',
-        );
+        return ApiDocPaths::outputDirectory($this->config);
     }
 
     /**

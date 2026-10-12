@@ -28,6 +28,12 @@ final class SecurityResolver
 
     public const API_KEY = 'apiKeyAuth';
 
+    /** Bearer 方案对应的请求头。 */
+    public const BEARER_HEADER = 'Authorization';
+
+    /** API 密钥方案对应的请求头。 */
+    public const API_KEY_HEADER = 'X-Api-Key';
+
     /** @var array<string, OA\Security\Scheme> 已被引用的安全方案 */
     private array $used = [];
 
@@ -57,11 +63,35 @@ final class SecurityResolver
             return [$this->requirement(self::API_KEY)];
         }
 
-        if ($declaration->authenticated || $declaration->requiresPermission()) {
+        /*
+         * 角色要求隐含「已登录」：没有身份就无从判角色。所以只写 #[RequireRole] 的接口
+         * 同样必须声明 security —— 否则文档会把它描述成公开可调。
+         */
+        if ($declaration->authenticated || $declaration->requiresPermission() || $declaration->roles !== []) {
             return [$this->requirement(self::BEARER)];
         }
 
         return null;
+    }
+
+    /**
+     * 接口要求的角色，作为厂商扩展暴露给文档消费方。
+     *
+     * @return list<string>
+     */
+    public function requiredRoles(ReflectionMethod $method): array
+    {
+        return $this->declarations->read($method)->roles;
+    }
+
+    /**
+     * 是否声明了权限码或角色：两者都会让 403 成为可达的失败路径。
+     */
+    public function requiresAuthorization(ReflectionMethod $method): bool
+    {
+        $declaration = $this->declarations->read($method);
+
+        return $declaration->permissions !== [] || $declaration->roles !== [];
     }
 
     /**
@@ -112,13 +142,13 @@ final class SecurityResolver
                 component: self::API_KEY,
                 type: 'apiKey',
                 description: '用户 API 密钥，直接放在请求头里，不加 Bearer 前缀；由用户在各端后台自助创建，可设有效期、可单独吊销。',
-                name: 'X-Api-Key',
+                name: self::API_KEY_HEADER,
                 in: 'header',
             ),
             default => new OA\Security\Scheme(
                 component: self::BEARER,
                 type: 'http',
-                description: sprintf('登录后获得的访问令牌，放在 %s 请求头，格式为 Bearer <token>。', 'Authorization'),
+                description: sprintf('登录后获得的访问令牌，放在 %s 请求头，格式为 Bearer <token>。', self::BEARER_HEADER),
                 scheme: 'bearer',
                 bearerFormat: 'at_<64 位十六进制>',
             ),

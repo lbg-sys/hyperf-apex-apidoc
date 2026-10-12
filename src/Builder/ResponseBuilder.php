@@ -70,6 +70,16 @@ final class ResponseBuilder
         }
         foreach ($method->getAttributes(ApiError::class) as $attribute) {
             foreach ($attribute->newInstance()->codes as $code) {
+                if ($code === ErrorCode::SUCCESS) {
+                    // SUCCESS 的状态码就是成功响应本身：声明它只会得到一条 code 枚举为空、
+                    // 且与 200 成功响应抢同一个键的响应条目，产物自相矛盾。
+                    throw new RuntimeException(sprintf(
+                        '%s::%s() 的 #[ApiError] 不能声明 SUCCESS，成功响应由返回类型推导。',
+                        $method->getDeclaringClass()->getName(),
+                        $method->getName(),
+                    ));
+                }
+
                 $statuses[] = $code->getHttpStatus()->value;
             }
         }

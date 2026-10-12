@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hyperf\Apex\ApiDoc\Controller;
 
+use Hyperf\Apex\ApiDoc\Support\ApiDocPaths;
 use Hyperf\Apex\Http\Controller\AbstractController;
 use Hyperf\Apex\Security\Attribute\PublicAccess;
+use Hyperf\Contract\ConfigInterface;
 use Hyperf\HttpServer\Annotation\Controller;
 use Hyperf\HttpServer\Annotation\GetMapping;
 use Hyperf\HttpServer\Contract\ResponseInterface as HttpResponseInterface;
@@ -14,19 +16,17 @@ use Psr\Http\Message\ResponseInterface;
 #[Controller(prefix: '/api_doc')]
 final class ApiDocController extends AbstractController
 {
-    private const OPENAPI_FILE = '/runtime/api-doc/openapi.json';
-
-    private const APIFOX_FILE = '/runtime/api-doc/apifox.json';
-
-    public function __construct(private readonly HttpResponseInterface $response)
-    {
+    public function __construct(
+        private readonly HttpResponseInterface $response,
+        private readonly ConfigInterface $config,
+    ) {
     }
 
     #[GetMapping(path: 'get_openapi')]
     #[PublicAccess]
     public function openApi(): ResponseInterface
     {
-        return $this->file(self::OPENAPI_FILE, 'OpenAPI');
+        return $this->file(ApiDocPaths::OPENAPI_FILE, 'OpenAPI');
     }
 
     /**
@@ -38,12 +38,16 @@ final class ApiDocController extends AbstractController
     #[PublicAccess]
     public function apifox(): ResponseInterface
     {
-        return $this->file(self::APIFOX_FILE, 'Apifox');
+        return $this->file(ApiDocPaths::APIFOX_FILE, 'Apifox');
     }
 
-    private function file(string $relativePath, string $label): ResponseInterface
+    /**
+     * 产物路径与生成命令共用 `ApiDocPaths`：这里曾经把路径写死成 BASE_PATH/runtime/api-doc，
+     * 应用按 `api_doc.output_path` 把产物挪走后，生成命令报成功、接口却一直返回「尚未生成」。
+     */
+    private function file(string $fileName, string $label): ResponseInterface
     {
-        $path = BASE_PATH . $relativePath;
+        $path = ApiDocPaths::outputFile($this->config, $fileName);
         if (! is_readable($path)) {
             return $this->response->json([
                 'code' => 404,

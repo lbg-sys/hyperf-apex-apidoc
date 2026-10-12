@@ -13,6 +13,7 @@ use Hyperf\Apex\ApiDoc\Builder\ReturnTypeResolver;
 use Hyperf\Apex\ApiDoc\Builder\SecurityResolver;
 use Hyperf\Apex\ApiDoc\Compiler\DocumentCompilerInterface;
 use Hyperf\Apex\ApiDoc\Compiler\SchemaFragmentTranslator;
+use Hyperf\Apex\DTO\Schema\SchemaFragment;
 use Hyperf\Apex\Http\Response\Contract\ApiResponseInterface;
 use Hyperf\Apex\Http\Response\ResponseEncoderResolver;
 use Hyperf\Apex\RateLimit\RateLimitRuleReader;
@@ -26,6 +27,9 @@ use RuntimeException;
  */
 final class OpenApiGenerator
 {
+    /** 组件引用的前缀，与 DTOSchemaFactory / SchemaReference 生成的形态一致。 */
+    private const REF_PREFIX = '#/components/schemas/';
+
     private readonly DTOSchemaFactory $schemas;
 
     private readonly ControllerScanner $scanner;
@@ -113,6 +117,7 @@ final class OpenApiGenerator
 
         usort($operations, static fn (OA\Operation $a, OA\Operation $b): int => [$a->path, $a->method] <=> [$b->path, $b->method]);
         self::assertUniqueOperationIds($operations);
+        $this->assertNoDanglingReferences();
         $specification->add(...$operations);
 
         foreach ($this->schemas->componentFragments() as $name => $fragment) {
@@ -150,6 +155,79 @@ final class OpenApiGenerator
 
             $seen[$id] = $operation->method . ' ' . $operation->path;
         }
+    }
+
+    /**
+     * 组件之间不许出现悬空引用。
+     *
+     * 典型来源是 `#[Discriminator]` 的 mapping：它按短类名直接拼出引用、不会注册组件，
+     * mapping 里的类必须同时出现在 `#[OneOf]` 里才会被注册。漏写时产物里就留下一个指向不存在
+     * 组件的 `$ref`，而编译器自带的 validate() 不查这一项 —— 要等下游导入文档时才炸。
+     *
+     * 只查「组件 → 组件」的引用：组件是否被某个 operation 引用（孤儿组件）需要另外遍历 OA
+     * 对象树，收益不抵复杂度，而错误响应与安全方案本来就是「只注册被引用到的」。
+     */
+    private function assertNoDanglingReferences(): void
+    {
+        $fragments = $this->schemas->componentFragments();
+
+        $registered = [];
+        foreach (array_keys($fragments) as $name) {
+            $registered[(string) $name] = true;
+        }
+
+        foreach ($fragments as $name => $fragment) {
+            foreach (self::collectRefs($fragment) as $ref) {
+                if (! str_starts_with($ref, self::REF_PREFIX)) {
+                    continue;
+                }
+
+                $target = substr($ref, strlen(self::REF_PREFIX));
+                if (! isset($registered[$target])) {
+                    throw new RuntimeException(sprintf(
+                        '组件 %s 引用了未注册的组件 %s：请把该类一并写进对应的 #[OneOf]'
+                        . '（#[Discriminator] 的 mapping 不会注册组件）。',
+                        (string) $name,
+                        $target,
+                    ));
+                }
+            }
+        }
+    }
+
+    /**
+     * 递归收集 fragment 里出现的组件引用。
+     *
+     * 不只看 `ref` 键：`#[Discriminator]` 把引用写在 `discriminator.mapping` 的值里，
+     * 按关键字白名单收集会漏掉它。
+     *
+     * @return list<string>
+     */
+    private static function collectRefs(mixed $value): array
+    {
+        if ($value instanceof SchemaFragment) {
+            $refs = [];
+            foreach ($value->keywords() as $item) {
+                array_push($refs, ...self::collectRefs($item));
+            }
+
+            return $refs;
+        }
+
+        if (is_string($value)) {
+            return str_contains($value, self::REF_PREFIX) ? [$value] : [];
+        }
+
+        if (is_array($value)) {
+            $refs = [];
+            foreach ($value as $item) {
+                array_push($refs, ...self::collectRefs($item));
+            }
+
+            return $refs;
+        }
+
+        return [];
     }
 
     /**

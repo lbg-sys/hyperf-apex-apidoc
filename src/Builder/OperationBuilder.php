@@ -119,10 +119,23 @@ final class OperationBuilder
         ReflectionClass $controller,
     ): OA\Operation {
         $operation = ($method->getAttributes(ApiOperation::class)[0] ?? null)?->newInstance();
-        $summary = $operation->summary ?? $method->getName();
+        if ($operation === null || trim($operation->summary) === '') {
+            /*
+             * 不退回方法名：那样文档里会出现一串英文方法名，看起来「有名字」但没人知道它是干什么的，
+             * 而且漏写这件事永远不会被发现。接口名与分组是文档契约的一部分，必须在生成期要求。
+             */
+            throw new RuntimeException(sprintf(
+                '%s::%s() 是接口方法，必须用 #[ApiOperation(summary: \'接口中文名\', tags: [\'分组\'])] 声明。',
+                $controller->getName(),
+                $method->getName(),
+            ));
+        }
+
+        $summary = $operation->summary;
 
         $requirements = $this->security->requirementsFor($method);
         $permissions = $this->security->requiredPermissions($method);
+        $roles = $this->security->requiredRoles($method);
 
         // 成功响应先于请求装配，以保持 components.schemas 的注册顺序稳定。
         $success = $this->responses->success($method);
@@ -131,8 +144,10 @@ final class OperationBuilder
         $errors = $this->responses->errors(
             $method,
             $requirements !== null,
-            $permissions !== [],
-            $parameters !== [] || $request['requestBody'] !== null,
+            // 403 由授权中间件抛出：声明了权限码或角色时都可能出现。
+            $this->security->requiresAuthorization($method),
+            // 422 只来自参数水合与校验，请求头不参与其中 —— 把它算进来等于宣称一条不可达的失败路径。
+            $request['parameters'] !== [] || $request['requestBody'] !== null,
             $this->rateLimits->read($method) !== [],
         );
 
@@ -142,6 +157,9 @@ final class OperationBuilder
         }
         if ($permissions !== []) {
             $extensions['required-permissions'] = $permissions;
+        }
+        if ($roles !== []) {
+            $extensions['required-roles'] = $roles;
         }
 
         return new OA\Operation(
@@ -153,8 +171,8 @@ final class OperationBuilder
             // 只要 URL 不冲突 operationId 就不重复，客户端标识也跟随 URL 契约走。
             operationId: self::operationIdFromUrl($path, $httpMethod),
             summary: $summary,
-            description: ($operation->description ?? '') !== '' ? $operation->description : null,
-            tags: $operation?->tags !== [] ? $operation?->tags : null,
+            description: $operation->description !== '' ? $operation->description : null,
+            tags: $operation->tags !== [] ? $operation->tags : null,
             parameters: $parameters !== [] ? $parameters : null,
             requestBody: $request['requestBody'],
             responses: [$success, ...$errors],

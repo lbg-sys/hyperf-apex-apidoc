@@ -171,14 +171,55 @@ final class ReturnTypeResolver
         return implode('_', $parts);
     }
 
-    private function fragmentFromDocblock(ReflectionMethod $method): ?SchemaFragment
+    /**
+     * 从注释里取出 @return 的类型表达式，剥掉紧跟在后面的说明文字。
+     *
+     * 直接按整行取会把说明当成类型的一部分：`list<DemoDTO> 列表` 只是靠泛型解析的贪婪匹配侥幸
+     * 能用，`FooDTO[] 列表` 会退化成「类名是 FooDTO[] 列表」的叶子，`array<string, FooDTO> 映射`
+     * 因为结尾不是 `>` 直接解析失败 —— 回落成没有 items 的裸 array，而那是上游判 warning、
+     * 足以让整个生成命令失败的形态。
+     *
+     * 这里按 `<>`（连同 `{}` 形状）配对深度扫描：深度归零后遇到空白即认为类型结束。
+     */
+    private static function docblockType(string $docComment): ?string
     {
-        $docComment = $method->getDocComment();
-        if ($docComment === false || ! preg_match('/@return\s+([^\r\n*]+)/', $docComment, $matches)) {
+        if (! preg_match('/@return\s+([^\r\n*]+)/', $docComment, $matches)) {
             return null;
         }
 
-        $declared = trim($matches[1]);
+        $rest = trim($matches[1]);
+        $type = '';
+        $depth = 0;
+        for ($index = 0, $length = strlen($rest); $index < $length; ++$index) {
+            $character = $rest[$index];
+            if ($character === '<' || $character === '{') {
+                ++$depth;
+            } elseif ($character === '>' || $character === '}') {
+                $depth = max(0, $depth - 1);
+            } elseif ($depth === 0 && ($character === ' ' || $character === "\t")) {
+                break;
+            }
+
+            $type .= $character;
+        }
+
+        $type = trim($type);
+
+        return $type === '' ? null : $type;
+    }
+
+    private function fragmentFromDocblock(ReflectionMethod $method): ?SchemaFragment
+    {
+        $docComment = $method->getDocComment();
+        if ($docComment === false) {
+            return null;
+        }
+
+        $declared = self::docblockType($docComment);
+        if ($declared === null) {
+            return null;
+        }
+
         $nullable = str_starts_with($declared, '?');
         $fragment = null;
         foreach (explode('|', ltrim($declared, '?')) as $candidate) {
