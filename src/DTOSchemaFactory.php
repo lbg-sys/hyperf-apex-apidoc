@@ -40,11 +40,45 @@ final class DTOSchemaFactory
         'array', 'iterable', 'object', 'mixed', 'null',
     ];
 
-    /** 只对特定 JSON 类型生效的关键字，用于合并后的死约束检查。 */
+    /**
+     * 关键字 → 生效的 JSON 类型集合：类型不匹配的关键字是死约束（不会被任何校验器执行）。
+     *
+     * 数值关键字对 integer 与 number 都生效，所以这张表是「关键字 → 类型集合」而不是反过来 ——
+     * 反过来的写法表达不了「一个关键字对两种类型都合法」。
+     * 不在表里的关键字（`enum`、`const`、`default`、`allOf` 等）对所有类型都合法，无需列出。
+     */
     private const TYPE_BOUND_KEYWORDS = [
-        'string' => ['minLength', 'maxLength'],
-        'array' => ['items', 'minItems', 'maxItems', 'uniqueItems', 'prefixItems', 'contains'],
-        'object' => ['minProperties', 'maxProperties', 'additionalProperties', 'patternProperties', 'propertyNames'],
+        'minLength' => ['string'],
+        'maxLength' => ['string'],
+        'pattern' => ['string'],
+        'contentEncoding' => ['string'],
+        'contentMediaType' => ['string'],
+        // format 按 JSON Schema 是注解，但 `int64` / `int32` 挂在小数、整数上的写法很常见。
+        'format' => ['string', 'integer', 'number'],
+        'items' => ['array'],
+        'prefixItems' => ['array'],
+        'minItems' => ['array'],
+        'maxItems' => ['array'],
+        'uniqueItems' => ['array'],
+        'contains' => ['array'],
+        'minContains' => ['array'],
+        'maxContains' => ['array'],
+        'unevaluatedItems' => ['array'],
+        'properties' => ['object'],
+        'required' => ['object'],
+        'minProperties' => ['object'],
+        'maxProperties' => ['object'],
+        'additionalProperties' => ['object'],
+        'patternProperties' => ['object'],
+        'propertyNames' => ['object'],
+        'dependentRequired' => ['object'],
+        'dependentSchemas' => ['object'],
+        'unevaluatedProperties' => ['object'],
+        'minimum' => ['integer', 'number'],
+        'maximum' => ['integer', 'number'],
+        'exclusiveMinimum' => ['integer', 'number'],
+        'exclusiveMaximum' => ['integer', 'number'],
+        'multipleOf' => ['integer', 'number'],
     ];
 
     /** @var array<class-string, SchemaFragment> */
@@ -238,7 +272,18 @@ final class DTOSchemaFactory
             $value = $value->keywords();
         }
 
-        return is_array($value) ? array_map(self::comparableValue(...), $value) : $value;
+        if (! is_array($value)) {
+            return $value;
+        }
+
+        $normalized = array_map(self::comparableValue(...), $value);
+        // 键序不参与比较：`{a:1, b:2}` 与 `{b:2, a:1}` 是同一份结构。
+        // 不归一的话，同一个泛型实例化按不同的属性声明顺序注册会被判成「两种结构」而报冲突。
+        if (! array_is_list($normalized)) {
+            ksort($normalized, SORT_STRING);
+        }
+
+        return $normalized;
     }
 
     /**
@@ -474,23 +519,19 @@ final class DTOSchemaFactory
             return $fragment;
         }
 
-        foreach (self::TYPE_BOUND_KEYWORDS as $expected => $keywords) {
-            if ($type === $expected) {
+        foreach (self::TYPE_BOUND_KEYWORDS as $keyword => $expected) {
+            if (in_array($type, $expected, true) || ! $fragment->has($keyword)) {
                 continue;
             }
 
-            foreach ($keywords as $keyword) {
-                if ($fragment->has($keyword)) {
-                    throw new RuntimeException(sprintf(
-                        '%s 的 %s 与 type: %s 不匹配 —— 该关键字只对 %s 生效，'
-                        . '留在这里是一条不会被任何校验器执行的死约束。',
-                        $where,
-                        $keyword,
-                        $type,
-                        $expected
-                    ));
-                }
-            }
+            throw new RuntimeException(sprintf(
+                '%s 的 %s 与 type: %s 不匹配 —— 该关键字只对 %s 生效，'
+                . '留在这里是一条不会被任何校验器执行的死约束。',
+                $where,
+                $keyword,
+                $type,
+                implode(' / ', $expected)
+            ));
         }
 
         return $fragment;
