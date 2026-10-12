@@ -117,7 +117,12 @@ final class ReturnTypeResolver
 
             $property = $instance->targetProperty();
             if (isset($propertyItemTypes[$property])) {
-                throw new RuntimeException(sprintf('Response property %s::%s has multiple array item types.', $type, $property));
+                throw new RuntimeException(sprintf(
+                    '%s 的返回类型 %s 上，属性 %s 被多次声明数组元素类型，请只保留一处。',
+                    self::describe($method),
+                    $type,
+                    $property
+                ));
             }
             $propertyItemTypes[$property] = $instance->itemType();
         }
@@ -137,10 +142,20 @@ final class ReturnTypeResolver
         $properties = (array) $fragment->get('properties', []);
         foreach ($propertyItemTypes as $property => $itemType) {
             if (! isset($properties[$property])) {
-                throw new RuntimeException(sprintf('Response property %s::%s does not exist.', $type, $property));
+                throw new RuntimeException(sprintf(
+                    '%s 的返回类型 %s 里没有属性 %s，但被声明了数组元素类型。',
+                    self::describe($method),
+                    $type,
+                    $property
+                ));
             }
             if ($properties[$property]->get('type') !== 'array') {
-                throw new RuntimeException(sprintf('Response property %s::%s must be an array.', $type, $property));
+                throw new RuntimeException(sprintf(
+                    '%s 的返回类型 %s，其属性 %s 不是数组，无法声明元素类型。',
+                    self::describe($method),
+                    $type,
+                    $property
+                ));
             }
 
             $properties[$property] = $properties[$property]->with('items', $this->fragmentForType($itemType));
@@ -165,10 +180,24 @@ final class ReturnTypeResolver
         $parts = [DTOSchemaFactory::componentName($type)];
         foreach ($propertyItemTypes as $property => $itemType) {
             $parts[] = $property;
-            $parts[] = class_exists($itemType) ? DTOSchemaFactory::componentName($itemType) : ucfirst($itemType);
+            $parts[] = class_exists($itemType)
+                ? DTOSchemaFactory::componentName($itemType)
+                : self::sanitizeTypeName($itemType);
         }
 
         return implode('_', $parts);
+    }
+
+    /**
+     * 非类名（类型表达式）的组件名净化。
+     *
+     * 类型表达式里带 `<`、`>`、`[]`、`,` 这些字符，而组件名要写进
+     * `#/components/schemas/…` 引用里 —— 它们不是合法的 JSON-Pointer 片段字符，
+     * 多数 OpenAPI 工具与代码生成器解不了（`PaginationResultDTO_list_List<int>`）。
+     */
+    private static function sanitizeTypeName(string $type): string
+    {
+        return ucfirst(preg_replace('/[^A-Za-z0-9_]/', '_', $type) ?? $type);
     }
 
     /**

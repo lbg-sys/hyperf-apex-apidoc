@@ -142,17 +142,20 @@ final class DTOSchemaFactory
      * 保证「同一个类型在任何位置都得到同一种表达」。接受 list<X>、array<string, X>、
      * X[] 等嵌套写法；无法表达的写法直接抛异常，而不是静默落成 type: string。
      */
-    public function fragmentForTypeName(string $type): SchemaFragment
+    /**
+     * @param bool $nested 该类型是否出现在泛型表达式内层（内层必须写完整类名，见 fragmentForLeaf）
+     */
+    public function fragmentForTypeName(string $type, bool $nested = false): SchemaFragment
     {
-        return $this->fragmentForExpression(TypeExpression::parse($type));
+        return $this->fragmentForExpression(TypeExpression::parse($type), $nested);
     }
 
     /**
      * 已解析的类型表达式转片段。@return 注释需要先还原短类名再解析，因此单独暴露这个入口。
      */
-    public function fragmentForExpression(TypeExpression $expression): SchemaFragment
+    public function fragmentForExpression(TypeExpression $expression, bool $nested = false): SchemaFragment
     {
-        return $this->fragmentFor($expression, false);
+        return $this->fragmentFor($expression, $nested);
     }
 
     /**
@@ -343,14 +346,20 @@ final class DTOSchemaFactory
         $array = $this->attribute($property, ArrayOfAttribute::class);
         if ($array instanceof ArrayOfAttribute) {
             // 元素类型走统一解析：枚举元素要展开成 {key, name}，而不是按类反射出 $ref。
-            $items = $this->fragmentForTypeName($array->itemType());
+            // nested=true：元素位置上的类名必须写完整类名（字符串里的短类名拿不到命名空间），
+            // 写错要在这里报错 —— 否则它会静默落成 `items: {type: string}`，而校验与水合
+            // 仍按「元素是对象」处理，同一份声明被三处读出三种结论。
+            $items = $this->fragmentForTypeName($array->itemType(), true);
             foreach ($property->getAttributes() as $attribute) {
                 $instance = $attribute->newInstance();
                 if ($instance instanceof ItemSchemaAttribute) {
                     $items = $items->merge($instance->itemSchemaFragment());
                 }
             }
-            $fragment = $fragment->with('items', $items);
+            // 元素层同样要过一致性收口：`#[ArrayOf('string')]` + `#[ItemMinimum(1)]` 会产出
+            // `items: {type: string, minimum: 1}` 这种不会被任何校验器执行的死约束，
+            // 而属性级同样写法是会报错的 —— 两层判据必须一致。
+            $fragment = $fragment->with('items', self::reconcile($this->describe($property) . '.items', $items));
         }
 
         // 按源码声明顺序依次合并，后声明的覆盖先声明的（#[MapOf] 依赖这一点）。
@@ -366,7 +375,7 @@ final class DTOSchemaFactory
             }
 
             $addition = $instance->fragment();
-            $this->rejectConflicts($property, $addition, $written);
+            $this->rejectConflicts($property, $addition, $instance, $written);
             $fragment = $fragment->merge($addition);
         }
 
@@ -383,24 +392,32 @@ final class DTOSchemaFactory
      * #[DateFormat] 抢 pattern，结果由声明顺序决定，而文档与校验各按自己那份走。
      * description 例外 —— 它的合并语义就是追加。
      *
-     * @param array<string, true> $written
+     * @param array<string, array{value: mixed, attribute: class-string}> $written
      */
-    private function rejectConflicts(ReflectionProperty $property, SchemaFragment $addition, array &$written): void
+    private function rejectConflicts(ReflectionProperty $property, SchemaFragment $addition, SchemaAttribute $attribute, array &$written): void
     {
-        foreach (array_keys($addition->keywords()) as $keyword) {
+        foreach ($addition->keywords() as $keyword => $value) {
             if ($keyword === 'description' || $keyword === 'x') {
                 continue;
             }
 
-            if (isset($written[$keyword])) {
+            if (array_key_exists($keyword, $written)) {
+                // 写同一个关键字、值也完全一致（例如 #[MapOf] 与 #[PropertyCount] 都声明
+                // type: object）：产出与声明顺序无关，不是冲突，不该拦。
+                if (self::comparableValue($written[$keyword]['value']) === self::comparableValue($value)) {
+                    continue;
+                }
+
                 throw new RuntimeException(sprintf(
-                    '%s 上有多个 Attribute 写入同一个 Schema 关键字 %s，产出取决于声明顺序。请只保留一个。',
+                    '%s 上的 %s 与 %s 都在写 Schema 关键字 %s，产出取决于声明顺序。请只保留一个。',
                     $this->describe($property),
+                    $written[$keyword]['attribute'],
+                    $attribute::class,
                     $keyword
                 ));
             }
 
-            $written[$keyword] = true;
+            $written[$keyword] = ['value' => $value, 'attribute' => $attribute::class];
         }
     }
 
