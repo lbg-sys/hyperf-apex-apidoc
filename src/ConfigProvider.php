@@ -31,7 +31,7 @@ class ConfigProvider
             'publish' => [
                 [
                     'id' => 'config',
-                    'description' => 'The configuration files for apex api-doc generator.',
+                    'description' => 'apex api-doc 生成器的配置模板。',
                     'source' => __DIR__ . '/../publish/',
                     'destination' => BASE_PATH . '/config/autoload/',
                 ],

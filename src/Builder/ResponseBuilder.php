@@ -126,7 +126,7 @@ final class ResponseBuilder
 
         if (count($names) !== 1) {
             throw new RuntimeException(sprintf(
-                'Response DTO %s must have exactly one property marked with %s.',
+                '响应 DTO %s 必须恰好有一个属性标注 %s。',
                 $this->responseDtoClass,
                 ResponsePayload::class
             ));

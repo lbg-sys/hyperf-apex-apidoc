@@ -57,7 +57,7 @@ final class OpenApiGenerator
         private readonly array $servers = [],
     ) {
         if (! is_subclass_of($responseDtoClass, ApiResponseInterface::class)) {
-            throw new RuntimeException(sprintf('Response DTO must implement %s.', ApiResponseInterface::class));
+            throw new RuntimeException(sprintf('响应 DTO 必须实现 %s。', ApiResponseInterface::class));
         }
 
         $this->schemas = new DTOSchemaFactory();
